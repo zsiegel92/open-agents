@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback, useMemo, memo } from "react";
 import { Box, Text, useApp, useInput } from "ink";
 import { isToolUIPart, getToolName } from "ai";
+import { renderMarkdown } from "./lib/markdown.js";
 import { useChat } from "@ai-sdk/react";
 import { createAgentTransport } from "./transport.js";
 import { ToolCall } from "./components/tool-call.js";
@@ -22,10 +23,12 @@ type AppProps = {
 
 // Memoized text part component
 const TextPart = memo(function TextPart({ text }: { text: string }) {
+  const rendered = useMemo(() => renderMarkdown(text), [text]);
+
   return (
     <Box>
       <Text>●{" "}</Text>
-      <Text wrap="wrap">{text}</Text>
+      <Text>{rendered}</Text>
     </Box>
   );
 });
