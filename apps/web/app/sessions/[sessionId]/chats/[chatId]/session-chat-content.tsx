@@ -173,6 +173,24 @@ function useHasMounted() {
   );
 }
 
+function formatRelativeTime(date: Date): string {
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMins = Math.floor(diffMs / 60_000);
+  const diffHours = Math.floor(diffMs / 3_600_000);
+  const diffDays = Math.floor(diffMs / 86_400_000);
+
+  if (diffMins < 1) return "now";
+  if (diffMins < 60) return `${diffMins}m`;
+  if (diffHours < 24) return `${diffHours}h`;
+  if (diffDays < 7) return `${diffDays}d`;
+
+  return date.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+  });
+}
+
 type MessageRenderGroup =
   | {
       type: "part";
@@ -2244,16 +2262,19 @@ export function SessionChatContent(_props: unknown) {
               setChatSwitcherOpen(false);
             }}
             className={cn(
-              "flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left transition-colors",
+              "flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left transition-colors",
               chat.id === mobileActiveChatId
                 ? "bg-secondary"
                 : "hover:bg-muted/50",
             )}
           >
-            <span className="min-w-0 flex-1 pr-2 text-sm font-medium whitespace-normal break-words">
+            <span className="min-w-0 flex-1 truncate text-sm font-medium">
               {chat.title || "Untitled"}
             </span>
             <span className="flex shrink-0 items-center gap-1.5">
+              <span className="text-[11px] text-muted-foreground">
+                {formatRelativeTime(new Date(chat.updatedAt))}
+              </span>
               {chat.isStreaming && (
                 <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500" />
               )}
