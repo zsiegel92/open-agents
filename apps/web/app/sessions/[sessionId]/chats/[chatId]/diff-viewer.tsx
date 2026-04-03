@@ -10,11 +10,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import useSWR from "swr";
-import type {
-  DiffFile,
-  DiffResponse,
-} from "@/app/api/sessions/[sessionId]/diff/route";
+import type { DiffFile } from "@/app/api/sessions/[sessionId]/diff/route";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -36,12 +32,8 @@ import {
 } from "@/hooks/use-user-preferences";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { defaultDiffOptions, splitDiffOptions } from "@/lib/diffs-config";
-import { fetcher } from "@/lib/swr";
 import { cn } from "@/lib/utils";
-import {
-  useSessionChatWorkspaceContext,
-  useSessionChatMetadataContext,
-} from "./session-chat-context";
+import { useSessionChatWorkspaceContext } from "./session-chat-context";
 
 type DiffViewerProps = {
   open: boolean;
@@ -58,6 +50,10 @@ function shouldWrapDiffContent(filePath: string) {
   return [...wrappedDiffExtensions].some((extension) =>
     normalizedPath.endsWith(extension),
   );
+}
+
+function isUncommittedFile(file: DiffFile): boolean {
+  return file.stagingStatus === "unstaged" || file.stagingStatus === "partial";
 }
 
 function formatTimestamp(date: Date) {
@@ -228,18 +224,16 @@ function ScopeDropdown({
   scope,
   onScopeChange,
   uncommittedFileCount,
-  disabled,
 }: {
   scope: DiffScope;
   onScopeChange: (scope: DiffScope) => void;
-  uncommittedFileCount: number | null;
-  disabled?: boolean;
+  uncommittedFileCount: number;
 }) {
   const label = scope === "all" ? "All changes" : "Uncommitted changes";
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild disabled={disabled}>
+      <DropdownMenuTrigger asChild>
         <Button
           variant="ghost"
           size="sm"
@@ -261,10 +255,10 @@ function ScopeDropdown({
           <DropdownMenuRadioItem value="uncommitted">
             <div className="flex flex-col">
               <span>Uncommitted changes</span>
-              {uncommittedFileCount !== null && (
+              {uncommittedFileCount > 0 && (
                 <span className="text-xs text-muted-foreground">
-                  {uncommittedFileCount} file{uncommittedFileCount !== 1 && "s"}{" "}
-                  changed
+                  {uncommittedFileCount} file
+                  {uncommittedFileCount !== 1 && "s"} changed
                 </span>
               )}
             </div>
@@ -277,58 +271,42 @@ function ScopeDropdown({
 
 export function DiffViewer({ open, onOpenChange }: DiffViewerProps) {
   const {
-    diff: allDiff,
-    diffLoading: allDiffLoading,
-    diffRefreshing: allDiffRefreshing,
-    diffError: allDiffError,
+    diff,
+    diffLoading,
+    diffRefreshing,
+    diffError,
     diffCachedAt,
     sandboxInfo,
-    refreshDiff: refreshAllDiff,
+    refreshDiff,
   } = useSessionChatWorkspaceContext();
-  const { session } = useSessionChatMetadataContext();
   const isMobile = useIsMobile();
   const { preferences } = useUserPreferences();
   const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set());
   const [diffStyle, setDiffStyle] = useState<DiffStyle>("unified");
   const [scope, setScope] = useState<DiffScope>("all");
 
-  // Fetch uncommitted diff separately when scope is "uncommitted"
-  const sandboxConnected = sandboxInfo !== null;
-  const {
-    data: uncommittedDiff,
-    error: uncommittedError,
-    isLoading: uncommittedLoading,
-    isValidating: uncommittedRefreshing,
-    mutate: refreshUncommittedDiff,
-  } = useSWR<DiffResponse>(
-    sandboxConnected && scope === "uncommitted"
-      ? `/api/sessions/${session.id}/diff?scope=uncommitted`
-      : null,
-    fetcher,
-    {
-      revalidateOnFocus: false,
-      revalidateIfStale: true,
-    },
-  );
+  // Filter files based on the selected scope
+  const filteredFiles = useMemo(() => {
+    if (!diff) return [];
+    if (scope === "all") return diff.files;
+    return diff.files.filter(isUncommittedFile);
+  }, [diff, scope]);
 
-  // Select diff data based on current scope
-  const diff = scope === "uncommitted" ? (uncommittedDiff ?? null) : allDiff;
-  const diffLoading =
-    scope === "uncommitted" ? uncommittedLoading : allDiffLoading;
-  const diffRefreshing =
-    scope === "uncommitted" ? uncommittedRefreshing : allDiffRefreshing;
-  const diffError =
-    scope === "uncommitted"
-      ? (uncommittedError?.message ?? null)
-      : allDiffError;
+  // Compute summary for the filtered view
+  const filteredSummary = useMemo(() => {
+    if (scope === "all" && diff) return diff.summary;
+    return {
+      totalFiles: filteredFiles.length,
+      totalAdditions: filteredFiles.reduce((sum, f) => sum + f.additions, 0),
+      totalDeletions: filteredFiles.reduce((sum, f) => sum + f.deletions, 0),
+    };
+  }, [scope, diff, filteredFiles]);
 
-  // Count uncommitted files from the "all" diff data for the dropdown subtitle
+  // Count uncommitted files for the dropdown subtitle
   const uncommittedFileCount = useMemo(() => {
-    if (!allDiff) return null;
-    return allDiff.files.filter(
-      (f) => f.stagingStatus === "unstaged" || f.stagingStatus === "partial",
-    ).length;
-  }, [allDiff]);
+    if (!diff) return 0;
+    return diff.files.filter(isUncommittedFile).length;
+  }, [diff]);
 
   // Show stale indicator if sandbox is offline (even if data came from a live fetch earlier)
   const showStaleIndicator = !sandboxInfo && diff !== null;
@@ -346,21 +324,11 @@ export function DiffViewer({ open, onOpenChange }: DiffViewerProps) {
   };
 
   const expandAll = () => {
-    if (diff) {
-      setExpandedFiles(new Set(diff.files.map((f) => f.path)));
-    }
+    setExpandedFiles(new Set(filteredFiles.map((f) => f.path)));
   };
 
   const collapseAll = () => {
     setExpandedFiles(new Set());
-  };
-
-  const refreshDiff = async () => {
-    if (scope === "uncommitted") {
-      await refreshUncommittedDiff();
-    } else {
-      await refreshAllDiff();
-    }
   };
 
   useEffect(() => {
@@ -397,15 +365,14 @@ export function DiffViewer({ open, onOpenChange }: DiffViewerProps) {
                 scope={scope}
                 onScopeChange={setScope}
                 uncommittedFileCount={uncommittedFileCount}
-                disabled={!sandboxInfo}
               />
-              {diff && diff.summary.totalFiles > 0 && (
+              {filteredSummary.totalFiles > 0 && (
                 <div className="flex items-center gap-2 text-xs">
                   <span className="text-green-600 dark:text-green-500">
-                    +{diff.summary.totalAdditions}
+                    +{filteredSummary.totalAdditions}
                   </span>
                   <span className="text-red-600 dark:text-red-400">
-                    -{diff.summary.totalDeletions}
+                    -{filteredSummary.totalDeletions}
                   </span>
                 </div>
               )}
@@ -450,7 +417,7 @@ export function DiffViewer({ open, onOpenChange }: DiffViewerProps) {
                   Split
                 </button>
               </div>
-              {diff && diff.files.length > 0 && (
+              {filteredFiles.length > 0 && (
                 <>
                   <Button
                     variant="ghost"
@@ -501,7 +468,7 @@ export function DiffViewer({ open, onOpenChange }: DiffViewerProps) {
             </div>
           )}
 
-          {!diffLoading && !diffError && diff && diff.files.length === 0 && (
+          {!diffLoading && !diffError && diff && filteredFiles.length === 0 && (
             <div className="px-4 py-8 text-center">
               <p className="text-sm text-muted-foreground">
                 {scope === "uncommitted"
@@ -511,9 +478,9 @@ export function DiffViewer({ open, onOpenChange }: DiffViewerProps) {
             </div>
           )}
 
-          {!diffLoading && !diffError && diff && diff.files.length > 0 && (
+          {!diffLoading && !diffError && filteredFiles.length > 0 && (
             <div>
-              {diff.files.map((file) => (
+              {filteredFiles.map((file) => (
                 <FileEntry
                   key={file.path}
                   file={file}
@@ -527,13 +494,13 @@ export function DiffViewer({ open, onOpenChange }: DiffViewerProps) {
         </div>
 
         {/* Footer with file count and base ref */}
-        {diff && diff.files.length > 0 && (
+        {filteredFiles.length > 0 && (
           <div className="flex shrink-0 items-center justify-between border-t border-border px-4 py-2 text-xs text-muted-foreground">
             <span>
-              {diff.summary.totalFiles} file
-              {diff.summary.totalFiles !== 1 && "s"} changed
+              {filteredSummary.totalFiles} file
+              {filteredSummary.totalFiles !== 1 && "s"} changed
             </span>
-            {diff.baseRef && (
+            {diff?.baseRef && (
               <span>
                 vs{" "}
                 <span className="font-mono text-foreground/70">
