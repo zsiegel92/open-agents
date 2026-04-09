@@ -1,9 +1,20 @@
 "use client";
 
-import { ArrowLeft, CodeXml, Loader2, RefreshCw, Square } from "lucide-react";
+import {
+  ArrowLeft,
+  ExternalLink,
+  Loader2,
+  RefreshCw,
+  Square,
+} from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import type { CodeEditorStatusResponse } from "@/app/api/sessions/[sessionId]/code-editor/route";
 import { useCodespaceContext } from "./codespace-context";
 
@@ -28,7 +39,8 @@ function getErrorMessage(body: unknown, fallback: string): string {
 export default function CodespacePage() {
   const router = useRouter();
   const { sessionId } = useParams<{ sessionId: string }>();
-  const { sessionTitle } = useCodespaceContext();
+  const { sessionTitle, repoName, repoOwner, branch, cloneUrl } =
+    useCodespaceContext();
   const [state, setState] = useState<EditorState>({ status: "loading" });
   const [iframeLoaded, setIframeLoaded] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -124,54 +136,104 @@ export default function CodespacePage() {
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden">
-      {/* Toolbar */}
-      <div className="flex h-11 shrink-0 items-center gap-2 border-b border-border bg-background px-3">
-        <Button
-          variant="ghost"
-          size="sm"
-          className="gap-1.5"
-          onClick={() => router.back()}
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Back
-        </Button>
+      {/* Header — matches session header style */}
+      <header className="border-b border-border px-3 py-1.5">
+        <div className="flex items-center justify-between gap-2">
+          {/* Left: back + repo info */}
+          <div className="flex min-w-0 items-center gap-2">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 shrink-0"
+                  onClick={() => router.back()}
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">Back</TooltipContent>
+            </Tooltip>
 
-        <div className="flex min-w-0 items-center gap-1.5 text-sm text-muted-foreground">
-          <CodeXml className="h-4 w-4 shrink-0" />
-          <span className="truncate">{sessionTitle}</span>
-        </div>
+            <div className="flex min-w-0 items-center gap-1.5 text-sm">
+              {repoName && (
+                <div className="hidden min-w-0 items-center gap-1.5 sm:flex">
+                  {cloneUrl ? (
+                    /* oxlint-disable-next-line nextjs/no-html-link-for-pages */
+                    <a
+                      href={`https://github.com/${repoOwner}/${repoName}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1 truncate font-medium text-foreground hover:underline"
+                    >
+                      {repoName}
+                      <ExternalLink className="h-3 w-3 shrink-0 text-muted-foreground" />
+                    </a>
+                  ) : (
+                    <span className="truncate font-medium text-foreground">
+                      {repoName}
+                    </span>
+                  )}
+                  {branch && (
+                    <>
+                      <span className="text-muted-foreground/40">/</span>
+                      <span className="truncate font-mono text-muted-foreground">
+                        {branch}
+                      </span>
+                    </>
+                  )}
+                  <span className="text-muted-foreground/40">/</span>
+                </div>
+              )}
+              <span className="truncate font-medium text-foreground sm:font-normal sm:text-muted-foreground">
+                {sessionTitle}
+              </span>
+            </div>
+          </div>
 
-        <div className="flex-1" />
-
-        {state.status === "error" && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="gap-1.5"
-            onClick={handleRetry}
-          >
-            <RefreshCw className="h-4 w-4" />
-            Retry
-          </Button>
-        )}
-
-        {(state.status === "ready" || state.status === "stopping") && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="gap-1.5 text-muted-foreground"
-            disabled={state.status === "stopping"}
-            onClick={() => void handleStop()}
-          >
-            {state.status === "stopping" ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Square className="h-3.5 w-3.5 fill-current" />
+          {/* Right: stop / retry */}
+          <div className="flex shrink-0 items-center gap-1">
+            {state.status === "error" && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7"
+                    onClick={handleRetry}
+                  >
+                    <RefreshCw className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">Retry</TooltipContent>
+              </Tooltip>
             )}
-            {state.status === "stopping" ? "Stopping..." : "Stop Editor"}
-          </Button>
-        )}
-      </div>
+
+            {(state.status === "ready" || state.status === "stopping") && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7"
+                    disabled={state.status === "stopping"}
+                    onClick={() => void handleStop()}
+                  >
+                    {state.status === "stopping" ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Square className="h-3.5 w-3.5 fill-current" />
+                    )}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">
+                  {state.status === "stopping" ? "Stopping..." : "Stop editor"}
+                </TooltipContent>
+              </Tooltip>
+            )}
+          </div>
+        </div>
+      </header>
 
       {/* Content */}
       <div className="relative flex-1 overflow-hidden">
@@ -199,7 +261,7 @@ export default function CodespacePage() {
         )}
         {/* oxlint-enable react/iframe-missing-sandbox */}
 
-        {/* Loading overlay — shown while the API is working or while the iframe content is loading */}
+        {/* Loading overlay */}
         {state.status !== "error" &&
           (state.status === "loading" ||
             state.status === "starting" ||

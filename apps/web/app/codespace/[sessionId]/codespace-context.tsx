@@ -4,6 +4,10 @@ import { createContext, useContext, type ReactNode } from "react";
 
 type CodespaceContextValue = {
   sessionTitle: string;
+  repoName: string | null;
+  repoOwner: string | null;
+  branch: string | null;
+  cloneUrl: string | null;
 };
 
 const CodespaceContext = createContext<CodespaceContextValue | undefined>(
@@ -22,13 +26,23 @@ export function useCodespaceContext() {
 
 export function CodespaceProvider({
   sessionTitle,
+  repoName,
+  repoOwner,
+  branch,
+  cloneUrl,
   children,
 }: {
   sessionTitle: string;
+  repoName: string | null;
+  repoOwner: string | null;
+  branch: string | null;
+  cloneUrl: string | null;
   children: ReactNode;
 }) {
   return (
-    <CodespaceContext.Provider value={{ sessionTitle }}>
+    <CodespaceContext.Provider
+      value={{ sessionTitle, repoName, repoOwner, branch, cloneUrl }}
+    >
       {children}
     </CodespaceContext.Provider>
   );
